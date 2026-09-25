@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salon</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e8eaed;
+    --muted:#8a90a0; --accent:#5b8cff; --me:#233252;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column}
+  header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+  header h1{font-size:16px;margin:0;font-weight:600}
+  header .room{color:var(--muted);font-size:12px}
+  #shareBtn{margin-left:auto;background:var(--panel);border:1px solid var(--border);color:var(--text);
+    padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px}
+  #shareBtn:hover{border-color:var(--accent)}
+  #messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px}
+  .msg{max-width:75%;padding:8px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--border);
+    align-self:flex-start;word-wrap:break-word}
+  .msg.me{align-self:flex-end;background:var(--me)}
+  .msg .author{font-size:11px;color:var(--accent);margin-bottom:2px;font-weight:600}
+  .msg.me .author{color:#9fb6ff}
+  .msg .text{font-size:14px;white-space:pre-wrap}
+  .msg .time{font-size:10px;color:var(--muted);margin-top:3px;text-align:right}
+  form{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)}
+  input[type=text]{flex:1;background:var(--panel);border:1px solid var(--border);color:var(--text);
+    padding:10px 12px;border-radius:8px;font-size:14px;outline:none}
+  input[type=text]:focus{border-color:var(--accent)}
+  button{background:var(--accent);color:white;border:none;padding:10px 16px;border-radius:8px;
+    cursor:pointer;font-size:14px;font-weight:600}
+  button:disabled{opacity:.5;cursor:default}
+  #status{font-size:12px;color:var(--muted);padding:0 16px 8px}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:10}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:360px;width:90%}
+  .card h2{margin-top:0;font-size:16px}
+  .card input{width:100%;margin:10px 0;padding:10px;border-radius:8px;border:1px solid var(--border);
+    background:var(--bg);color:var(--text)}
+  .card button{width:100%}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>💬 Salon</h1>
+  <span class="room" id="roomLabel"></span>
+  <button id="shareBtn">Copier le lien</button>
+</header>
+
+<div id="messages"></div>
+<div id="status"></div>
+
+<form id="form">
+  <input type="text" id="input" placeholder="Écris un message…" autocomplete="off">
+  <button type="submit">Envoyer</button>
+</form>
+
+<div class="overlay" id="nameOverlay">
+  <div class="card">
+    <h2>Choisis un pseudo</h2>
+    <input type="text" id="nameInput" placeholder="Ton prénom / pseudo" maxlength="24">
+    <button id="nameOk">Entrer dans le salon</button>
+  </div>
+</div>
+
+<script>
+const API = "https://jsonblob.com/api/jsonBlob";
+const messagesEl = document.getElementById('messages');
+const statusEl = document.getElementById('status');
+const roomLabel = document.getElementById('roomLabel');
+const form = document.getElementById('form');
+const input = document.getElementById('input');
+const shareBtn = document.getElementById('shareBtn');
+const nameOverlay = document.getElementById('nameOverlay');
+const nameInput = document.getElementById('nameInput');
+const nameOk = document.getElementById('nameOk');
+
+let blobId = location.hash.replace('#','');
+let myName = localStorage.getItem('chat_name') || '';
+let lastCount = 0;
+let sending = false;
+
+function setStatus(t){ statusEl.textContent = t; }
+
+function render(messages){
+  const wasAtBottom = messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - 40;
+  messagesEl.innerHTML = '';
+  messages.forEach(m => {
+    const div = document.createElement('div');
+    div.className = 'msg' + (m.author === myName ? ' me' : '');
+    const time = new Date(m.ts).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+    div.innerHTML = `<div class="author">${escapeHtml(m.author)}</div><div class="text">${escapeHtml(m.text)}</div><div class="time">${time}</div>`;
+    messagesEl.appendChild(div);
+  });
+  if (wasAtBottom || messages.length !== lastCount) {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+  lastCount = messages.length;
+}
+
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function createRoom(){
+  setStatus('Création du salon…');
+  const res = await fetch(API, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','Accept':'application/json'},
+    body: JSON.stringify({messages:[]})
+  });
+  if (!res.ok) throw new Error('creation failed');
+  const loc = res.headers.get('Location');
+  blobId = loc.split('/').pop();
+  location.hash = blobId;
+  setStatus('');
+}
+
+async function fetchRoom(){
+  const res = await fetch(`${API}/${blobId}`, {headers:{'Accept':'application/json'}});
+  if (!res.ok) throw new Error('fetch failed');
+  return await res.json();
+}
+
+async function poll(){
+  try{
+    const data = await fetchRoom();
+    render(data.messages || []);
+    setStatus('');
+  }catch(e){
+    setStatus("Connexion perdue, nouvelle tentative…");
+  }
+}
+
+async function sendMessage(text){
+  if (sending) return;
+  sending = true;
+  try{
+    const data = await fetchRoom();
+    data.messages = data.messages || [];
+    data.messages.push({author: myName, text, ts: Date.now()});
+    await fetch(`${API}/${blobId}`, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body: JSON.stringify(data)
+    });
+    render(data.messages);
+  }catch(e){
+    setStatus("Échec de l'envoi, réessaie.");
+  }finally{
+    sending = false;
+  }
+}
+
+form.addEventListener('submit', e => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  sendMessage(text);
+});
+
+shareBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(location.href).then(() => {
+    shareBtn.textContent = 'Lien copié ✓';
+    setTimeout(() => shareBtn.textContent = 'Copier le lien', 1500);
+  });
+});
+
+nameOk.addEventListener('click', startChat);
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') startChat(); });
+
+function startChat(){
+  const val = nameInput.value.trim();
+  if (!val) return;
+  myName = val;
+  localStorage.setItem('chat_name', myName);
+  nameOverlay.style.display = 'none';
+  init();
+}
+
+async function init(){
+  try{
+    if (!blobId){
+      await createRoom();
+    }
+    roomLabel.textContent = 'salon #' + blobId.slice(0,6);
+    await poll();
+    setInterval(poll, 3000);
+  }catch(e){
+    setStatus("Impossible de créer/rejoindre le salon. Vérifie ta connexion.");
+  }
+}
+
+if (myName){
+  nameOverlay.style.display = 'none';
+  init();
+} else {
+  nameOverlay.style.display = 'flex';
+}
+</script>
+
+</body>
+</html>
