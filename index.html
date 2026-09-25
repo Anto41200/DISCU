@@ -3,164 +3,185 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Salon</title>
+<title>Note partagée</title>
 <style>
-  :root{
-    --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e8eaed;
-    --muted:#8a90a0; --accent:#5b8cff; --me:#233252;
-  }
+  :root{ --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e8eaed; --muted:#8a90a0; --accent:#5b8cff; }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
     background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column}
-  header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
-  header h1{font-size:16px;margin:0;font-weight:600}
-  header .room{color:var(--muted);font-size:12px}
+  header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+  header h1{font-size:16px;margin:0;font-weight:600;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:#e05353;flex-shrink:0}
+  .dot.ok{background:#4caf6d}
+  .room{color:var(--muted);font-size:12px}
   #shareBtn{margin-left:auto;background:var(--panel);border:1px solid var(--border);color:var(--text);
     padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px}
   #shareBtn:hover{border-color:var(--accent)}
-  #messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px}
-  .msg{max-width:75%;padding:8px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--border);
-    align-self:flex-start;word-wrap:break-word}
-  .msg.me{align-self:flex-end;background:var(--me)}
-  .msg .author{font-size:11px;color:var(--accent);margin-bottom:2px;font-weight:600}
-  .msg.me .author{color:#9fb6ff}
-  .msg .text{font-size:14px;white-space:pre-wrap}
-  .msg .time{font-size:10px;color:var(--muted);margin-top:3px;text-align:right}
-  form{display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)}
-  input[type=text]{flex:1;background:var(--panel);border:1px solid var(--border);color:var(--text);
-    padding:10px 12px;border-radius:8px;font-size:14px;outline:none}
-  input[type=text]:focus{border-color:var(--accent)}
-  button{background:var(--accent);color:white;border:none;padding:10px 16px;border-radius:8px;
-    cursor:pointer;font-size:14px;font-weight:600}
-  button:disabled{opacity:.5;cursor:default}
-  #status{font-size:12px;color:var(--muted);padding:0 16px 8px}
+  #note{flex:1;width:100%;background:var(--bg);color:var(--text);border:none;outline:none;
+    padding:20px;font-size:15px;line-height:1.5;resize:none;font-family:inherit}
+  #bar{display:flex;align-items:center;gap:12px;padding:8px 16px;border-top:1px solid var(--border);
+    font-size:12px;color:var(--muted);min-height:36px}
+  #undoBtn{margin-left:auto;background:var(--panel);border:1px solid var(--border);color:var(--text);
+    padding:5px 10px;border-radius:8px;cursor:pointer;font-size:12px;display:none}
+  #undoBtn:hover{border-color:var(--accent)}
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:10}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:360px;width:90%}
   .card h2{margin-top:0;font-size:16px}
   .card input{width:100%;margin:10px 0;padding:10px;border-radius:8px;border:1px solid var(--border);
     background:var(--bg);color:var(--text)}
-  .card button{width:100%}
+  .card button{width:100%;background:var(--accent);color:#fff;border:none;padding:10px;border-radius:8px;
+    cursor:pointer;font-size:14px;font-weight:600}
+  .banner{position:fixed;bottom:56px;left:50%;transform:translateX(-50%);background:var(--accent);
+    color:#fff;padding:8px 14px;border-radius:20px;font-size:13px;cursor:pointer;display:none}
 </style>
 </head>
 <body>
 
 <header>
-  <h1>💬 Salon</h1>
+  <span class="dot" id="dot"></span>
+  <h1>📝 Note partagée</h1>
   <span class="room" id="roomLabel"></span>
   <button id="shareBtn">Copier le lien</button>
 </header>
 
-<div id="messages"></div>
-<div id="status"></div>
+<textarea id="note" placeholder="Écris ici… tout ce que tu tapes est visible par tous ceux qui ont le lien, en direct."></textarea>
 
-<form id="form">
-  <input type="text" id="input" placeholder="Écris un message…" autocomplete="off">
-  <button type="submit">Envoyer</button>
-</form>
+<div id="banner" class="banner">Nouvelle version disponible — cliquer pour charger</div>
+
+<div id="bar">
+  <span id="lastEdit"></span>
+  <span id="typing"></span>
+  <button id="undoBtn">↩️ Annuler ma dernière modif</button>
+</div>
 
 <div class="overlay" id="nameOverlay">
   <div class="card">
     <h2>Choisis un pseudo</h2>
     <input type="text" id="nameInput" placeholder="Ton prénom / pseudo" maxlength="24">
-    <button id="nameOk">Entrer dans le salon</button>
+    <button id="nameOk">Entrer</button>
   </div>
 </div>
 
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script>
-const API = "https://jsonblob.com/api/jsonBlob";
-const messagesEl = document.getElementById('messages');
-const statusEl = document.getElementById('status');
+const noteEl = document.getElementById('note');
+const dot = document.getElementById('dot');
 const roomLabel = document.getElementById('roomLabel');
-const form = document.getElementById('form');
-const input = document.getElementById('input');
 const shareBtn = document.getElementById('shareBtn');
+const lastEditEl = document.getElementById('lastEdit');
+const typingEl = document.getElementById('typing');
+const undoBtn = document.getElementById('undoBtn');
+const banner = document.getElementById('banner');
 const nameOverlay = document.getElementById('nameOverlay');
 const nameInput = document.getElementById('nameInput');
 const nameOk = document.getElementById('nameOk');
 
-let blobId = location.hash.replace('#','');
-let myName = localStorage.getItem('chat_name') || '';
-let lastCount = 0;
-let sending = false;
+let roomId = location.hash.replace('#','');
+if (!roomId){
+  roomId = Math.random().toString(36).slice(2,10);
+  location.hash = roomId;
+}
+roomLabel.textContent = 'salon #' + roomId;
 
-function setStatus(t){ statusEl.textContent = t; }
+let myName = localStorage.getItem('note_name') || '';
+const topicNote = 'note-partagee-app/' + roomId + '/state';
+const topicTyping = 'note-partagee-app/' + roomId + '/typing';
 
-function render(messages){
-  const wasAtBottom = messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - 40;
-  messagesEl.innerHTML = '';
-  messages.forEach(m => {
-    const div = document.createElement('div');
-    div.className = 'msg' + (m.author === myName ? ' me' : '');
-    const time = new Date(m.ts).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
-    div.innerHTML = `<div class="author">${escapeHtml(m.author)}</div><div class="text">${escapeHtml(m.text)}</div><div class="time">${time}</div>`;
-    messagesEl.appendChild(div);
-  });
-  if (wasAtBottom || messages.length !== lastCount) {
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+let state = { text:'', editor:'', ts:0, history:[] };
+let isTyping = false;
+let pendingRemote = null;
+let typingTimer = null;
+let publishTimer = null;
+let lastTypingSent = 0;
+const typingUsers = {};
+
+const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', { reconnectPeriod: 2000 });
+
+client.on('connect', () => {
+  dot.classList.add('ok');
+  client.subscribe(topicNote);
+  client.subscribe(topicTyping);
+});
+client.on('reconnect', () => dot.classList.remove('ok'));
+client.on('close', () => dot.classList.remove('ok'));
+
+client.on('message', (topic, payload) => {
+  let data;
+  try { data = JSON.parse(payload.toString()); } catch(e){ return; }
+
+  if (topic === topicNote){
+    if (data.editor === myName) { state = data; renderMeta(); return; }
+    if (isTyping){
+      pendingRemote = data;
+      banner.style.display = 'block';
+    } else {
+      applyRemote(data);
+    }
   }
-  lastCount = messages.length;
-}
 
-function escapeHtml(s){
-  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-async function createRoom(){
-  setStatus('Création du salon…');
-  const res = await fetch(API, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json','Accept':'application/json'},
-    body: JSON.stringify({messages:[]})
-  });
-  if (!res.ok) throw new Error('creation failed');
-  const loc = res.headers.get('Location');
-  blobId = loc.split('/').pop();
-  location.hash = blobId;
-  setStatus('');
-}
-
-async function fetchRoom(){
-  const res = await fetch(`${API}/${blobId}`, {headers:{'Accept':'application/json'}});
-  if (!res.ok) throw new Error('fetch failed');
-  return await res.json();
-}
-
-async function poll(){
-  try{
-    const data = await fetchRoom();
-    render(data.messages || []);
-    setStatus('');
-  }catch(e){
-    setStatus("Connexion perdue, nouvelle tentative…");
+  if (topic === topicTyping && data.name !== myName){
+    typingUsers[data.name] = Date.now();
+    renderTyping();
   }
+});
+
+function applyRemote(data){
+  state = data;
+  noteEl.value = data.text || '';
+  banner.style.display = 'none';
+  pendingRemote = null;
+  renderMeta();
 }
 
-async function sendMessage(text){
-  if (sending) return;
-  sending = true;
-  try{
-    const data = await fetchRoom();
-    data.messages = data.messages || [];
-    data.messages.push({author: myName, text, ts: Date.now()});
-    await fetch(`${API}/${blobId}`, {
-      method:'PUT',
-      headers:{'Content-Type':'application/json','Accept':'application/json'},
-      body: JSON.stringify(data)
-    });
-    render(data.messages);
-  }catch(e){
-    setStatus("Échec de l'envoi, réessaie.");
-  }finally{
-    sending = false;
+function renderMeta(){
+  if (state.editor){
+    const t = new Date(state.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+    lastEditEl.textContent = `Dernière modif par ${state.editor} à ${t}`;
   }
+  undoBtn.style.display = (state.editor === myName && state.history && state.history.length) ? 'inline-block' : 'none';
 }
 
-form.addEventListener('submit', e => {
-  e.preventDefault();
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = '';
-  sendMessage(text);
+function renderTyping(){
+  const now = Date.now();
+  const names = Object.keys(typingUsers).filter(n => now - typingUsers[n] < 3000);
+  typingEl.textContent = names.length ? `✏️ ${names.join(', ')} en train d'écrire…` : '';
+}
+setInterval(renderTyping, 1000);
+
+banner.addEventListener('click', () => { if (pendingRemote) applyRemote(pendingRemote); });
+
+noteEl.addEventListener('input', () => {
+  isTyping = true;
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => { isTyping = false; if (pendingRemote) applyRemote(pendingRemote); }, 700);
+
+  const now = Date.now();
+  if (now - lastTypingSent > 1200){
+    lastTypingSent = now;
+    client.publish(topicTyping, JSON.stringify({name: myName, ts: now}));
+  }
+
+  clearTimeout(publishTimer);
+  publishTimer = setTimeout(publishNote, 700);
+});
+
+function publishNote(){
+  const history = (state.editor ? [{text: state.text, editor: state.editor, ts: state.ts}] : [])
+    .concat(state.history || []).slice(0,5);
+  const newState = { text: noteEl.value, editor: myName, ts: Date.now(), history };
+  state = newState;
+  client.publish(topicNote, JSON.stringify(newState), { retain: true });
+  renderMeta();
+}
+
+undoBtn.addEventListener('click', () => {
+  if (!state.history || !state.history.length) return;
+  const prev = state.history[0];
+  const newState = { text: prev.text, editor: myName, ts: Date.now(), history: state.history.slice(1) };
+  state = newState;
+  noteEl.value = prev.text;
+  client.publish(topicNote, JSON.stringify(newState), { retain: true });
+  renderMeta();
 });
 
 shareBtn.addEventListener('click', () => {
@@ -170,37 +191,18 @@ shareBtn.addEventListener('click', () => {
   });
 });
 
-nameOk.addEventListener('click', startChat);
-nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') startChat(); });
+nameOk.addEventListener('click', startApp);
+nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') startApp(); });
 
-function startChat(){
+function startApp(){
   const val = nameInput.value.trim();
   if (!val) return;
   myName = val;
-  localStorage.setItem('chat_name', myName);
+  localStorage.setItem('note_name', myName);
   nameOverlay.style.display = 'none';
-  init();
 }
 
-async function init(){
-  try{
-    if (!blobId){
-      await createRoom();
-    }
-    roomLabel.textContent = 'salon #' + blobId.slice(0,6);
-    await poll();
-    setInterval(poll, 3000);
-  }catch(e){
-    setStatus("Impossible de créer/rejoindre le salon. Vérifie ta connexion.");
-  }
-}
-
-if (myName){
-  nameOverlay.style.display = 'none';
-  init();
-} else {
-  nameOverlay.style.display = 'flex';
-}
+if (myName){ nameOverlay.style.display = 'none'; } else { nameOverlay.style.display = 'flex'; }
 </script>
 
 </body>
