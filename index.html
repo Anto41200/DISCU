@@ -3,24 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Note partagée</title>
+<title>Note partagée v2</title>
 <style>
-  :root{ --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e8eaed; --muted:#8a90a0; --accent:#5b8cff; }
+  :root{ --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e8eaed; --muted:#8a90a0; --accent:#5b8cff; --err:#e05353; --ok:#4caf6d; }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
     background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column}
-  header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+  header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   header h1{font-size:16px;margin:0;font-weight:600;white-space:nowrap}
-  .dot{width:8px;height:8px;border-radius:50%;background:#e05353;flex-shrink:0}
-  .dot.ok{background:#4caf6d}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--err);flex-shrink:0}
+  .dot.ok{background:var(--ok)}
+  .dot.pending{background:#e0a953}
   .room{color:var(--muted);font-size:12px}
   #shareBtn{margin-left:auto;background:var(--panel);border:1px solid var(--border);color:var(--text);
     padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px}
   #shareBtn:hover{border-color:var(--accent)}
+  #errorBanner{display:none;background:#3a1f1f;color:#ffb3b3;padding:10px 16px;font-size:13px;border-bottom:1px solid #5a2a2a}
   #note{flex:1;width:100%;background:var(--bg);color:var(--text);border:none;outline:none;
     padding:20px;font-size:15px;line-height:1.5;resize:none;font-family:inherit}
+  #note:disabled{opacity:.5}
   #bar{display:flex;align-items:center;gap:12px;padding:8px 16px;border-top:1px solid var(--border);
-    font-size:12px;color:var(--muted);min-height:36px}
+    font-size:12px;color:var(--muted);min-height:36px;flex-wrap:wrap}
   #undoBtn{margin-left:auto;background:var(--panel);border:1px solid var(--border);color:var(--text);
     padding:5px 10px;border-radius:8px;cursor:pointer;font-size:12px;display:none}
   #undoBtn:hover{border-color:var(--accent)}
@@ -38,18 +41,20 @@
 <body>
 
 <header>
-  <span class="dot" id="dot"></span>
-  <h1>📝 Note partagée</h1>
+  <span class="dot" id="dot" title="statut de connexion"></span>
+  <h1>📝 Note partagée <small style="color:var(--muted);font-weight:400">v2</small></h1>
   <span class="room" id="roomLabel"></span>
   <button id="shareBtn">Copier le lien</button>
 </header>
 
-<textarea id="note" placeholder="Écris ici… tout ce que tu tapes est visible par tous ceux qui ont le lien, en direct."></textarea>
+<div id="errorBanner"></div>
+
+<textarea id="note" placeholder="Écris ici… tout ce que tu tapes est visible par tous ceux qui ont le lien, en direct." disabled></textarea>
 
 <div id="banner" class="banner">Nouvelle version disponible — cliquer pour charger</div>
 
 <div id="bar">
-  <span id="lastEdit"></span>
+  <span id="statusText">Connexion…</span>
   <span id="typing"></span>
   <button id="undoBtn">↩️ Annuler ma dernière modif</button>
 </div>
@@ -62,147 +67,204 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <script>
-const noteEl = document.getElementById('note');
-const dot = document.getElementById('dot');
-const roomLabel = document.getElementById('roomLabel');
-const shareBtn = document.getElementById('shareBtn');
-const lastEditEl = document.getElementById('lastEdit');
-const typingEl = document.getElementById('typing');
-const undoBtn = document.getElementById('undoBtn');
-const banner = document.getElementById('banner');
-const nameOverlay = document.getElementById('nameOverlay');
-const nameInput = document.getElementById('nameInput');
-const nameOk = document.getElementById('nameOk');
-
-let roomId = location.hash.replace('#','');
-if (!roomId){
-  roomId = Math.random().toString(36).slice(2,10);
-  location.hash = roomId;
-}
-roomLabel.textContent = 'salon #' + roomId;
-
-let myName = localStorage.getItem('note_name') || '';
-const topicNote = 'note-partagee-app/' + roomId + '/state';
-const topicTyping = 'note-partagee-app/' + roomId + '/typing';
-
-let state = { text:'', editor:'', ts:0, history:[] };
-let isTyping = false;
-let pendingRemote = null;
-let typingTimer = null;
-let publishTimer = null;
-let lastTypingSent = 0;
-const typingUsers = {};
-
-const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', { reconnectPeriod: 2000 });
-
-client.on('connect', () => {
-  dot.classList.add('ok');
-  client.subscribe(topicNote);
-  client.subscribe(topicTyping);
-});
-client.on('reconnect', () => dot.classList.remove('ok'));
-client.on('close', () => dot.classList.remove('ok'));
-
-client.on('message', (topic, payload) => {
-  let data;
-  try { data = JSON.parse(payload.toString()); } catch(e){ return; }
-
-  if (topic === topicNote){
-    if (data.editor === myName) { state = data; renderMeta(); return; }
-    if (isTyping){
-      pendingRemote = data;
-      banner.style.display = 'block';
-    } else {
-      applyRemote(data);
-    }
-  }
-
-  if (topic === topicTyping && data.name !== myName){
-    typingUsers[data.name] = Date.now();
-    renderTyping();
-  }
-});
-
-function applyRemote(data){
-  state = data;
-  noteEl.value = data.text || '';
-  banner.style.display = 'none';
-  pendingRemote = null;
-  renderMeta();
+function showError(msg){
+  const b = document.getElementById('errorBanner');
+  b.textContent = '⚠️ ' + msg;
+  b.style.display = 'block';
+  document.getElementById('dot').className = 'dot';
+  document.getElementById('statusText').textContent = 'Erreur';
 }
 
-function renderMeta(){
-  if (state.editor){
-    const t = new Date(state.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-    lastEditEl.textContent = `Dernière modif par ${state.editor} à ${t}`;
-  }
-  undoBtn.style.display = (state.editor === myName && state.history && state.history.length) ? 'inline-block' : 'none';
-}
-
-function renderTyping(){
-  const now = Date.now();
-  const names = Object.keys(typingUsers).filter(n => now - typingUsers[n] < 3000);
-  typingEl.textContent = names.length ? `✏️ ${names.join(', ')} en train d'écrire…` : '';
-}
-setInterval(renderTyping, 1000);
-
-banner.addEventListener('click', () => { if (pendingRemote) applyRemote(pendingRemote); });
-
-noteEl.addEventListener('input', () => {
-  isTyping = true;
-  clearTimeout(typingTimer);
-  typingTimer = setTimeout(() => { isTyping = false; if (pendingRemote) applyRemote(pendingRemote); }, 700);
-
-  const now = Date.now();
-  if (now - lastTypingSent > 1200){
-    lastTypingSent = now;
-    client.publish(topicTyping, JSON.stringify({name: myName, ts: now}));
-  }
-
-  clearTimeout(publishTimer);
-  publishTimer = setTimeout(publishNote, 700);
-});
-
-function publishNote(){
-  const history = (state.editor ? [{text: state.text, editor: state.editor, ts: state.ts}] : [])
-    .concat(state.history || []).slice(0,5);
-  const newState = { text: noteEl.value, editor: myName, ts: Date.now(), history };
-  state = newState;
-  client.publish(topicNote, JSON.stringify(newState), { retain: true });
-  renderMeta();
-}
-
-undoBtn.addEventListener('click', () => {
-  if (!state.history || !state.history.length) return;
-  const prev = state.history[0];
-  const newState = { text: prev.text, editor: myName, ts: Date.now(), history: state.history.slice(1) };
-  state = newState;
-  noteEl.value = prev.text;
-  client.publish(topicNote, JSON.stringify(newState), { retain: true });
-  renderMeta();
-});
-
-shareBtn.addEventListener('click', () => {
-  navigator.clipboard.writeText(location.href).then(() => {
-    shareBtn.textContent = 'Lien copié ✓';
-    setTimeout(() => shareBtn.textContent = 'Copier le lien', 1500);
+// Charge la librairie MQTT depuis 2 sources différentes, la première qui marche est utilisée.
+function loadScript(src){
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
   });
-});
+}
 
-nameOk.addEventListener('click', startApp);
-nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') startApp(); });
+async function loadMqttLib(){
+  const sources = [
+    'https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js',
+    'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js'
+  ];
+  for (const src of sources){
+    try{
+      await loadScript(src);
+      if (window.mqtt) return true;
+    }catch(e){ /* essaie la source suivante */ }
+  }
+  return false;
+}
+
+(async function main(){
+  const ok = await loadMqttLib();
+  if (!ok){
+    showError("Impossible de charger la bibliothèque de connexion (bloquée par le réseau, un bloqueur de pub, ou pas d'accès internet). Essaie sur un autre réseau ou désactive ton bloqueur de pub pour ce site.");
+    return;
+  }
+  startApp();
+})();
 
 function startApp(){
-  const val = nameInput.value.trim();
-  if (!val) return;
-  myName = val;
-  localStorage.setItem('note_name', myName);
-  nameOverlay.style.display = 'none';
-}
+  const noteEl = document.getElementById('note');
+  const dot = document.getElementById('dot');
+  const roomLabel = document.getElementById('roomLabel');
+  const shareBtn = document.getElementById('shareBtn');
+  const statusText = document.getElementById('statusText');
+  const typingEl = document.getElementById('typing');
+  const undoBtn = document.getElementById('undoBtn');
+  const banner = document.getElementById('banner');
+  const nameOverlay = document.getElementById('nameOverlay');
+  const nameInput = document.getElementById('nameInput');
+  const nameOk = document.getElementById('nameOk');
 
-if (myName){ nameOverlay.style.display = 'none'; } else { nameOverlay.style.display = 'flex'; }
+  let roomId = location.hash.replace('#','');
+  if (!roomId){
+    roomId = Math.random().toString(36).slice(2,10);
+    location.hash = roomId;
+  }
+  roomLabel.textContent = 'salon #' + roomId;
+
+  let myName = localStorage.getItem('note_name') || '';
+  const topicNote = 'note-partagee-app-v2/' + roomId + '/state';
+  const topicTyping = 'note-partagee-app-v2/' + roomId + '/typing';
+
+  let state = { text:'', editor:'', ts:0, history:[] };
+  let isTyping = false;
+  let pendingRemote = null;
+  let typingTimer = null;
+  let publishTimer = null;
+  let lastTypingSent = 0;
+  const typingUsers = {};
+
+  dot.className = 'dot pending';
+  statusText.textContent = 'Connexion au serveur…';
+
+  const connectTimeout = setTimeout(() => {
+    if (dot.className.indexOf('ok') === -1){
+      showError("Connexion au serveur impossible après 10 secondes. Vérifie ta connexion internet, ou que ton réseau (pare-feu d'entreprise/école) n'bloque pas les WebSockets sécurisées (port 8884).");
+    }
+  }, 10000);
+
+  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', { reconnectPeriod: 2000, connectTimeout: 8000 });
+
+  client.on('connect', () => {
+    clearTimeout(connectTimeout);
+    dot.className = 'dot ok';
+    statusText.textContent = 'Connecté';
+    noteEl.disabled = false;
+    document.getElementById('errorBanner').style.display = 'none';
+    client.subscribe(topicNote);
+    client.subscribe(topicTyping);
+  });
+  client.on('reconnect', () => { dot.className = 'dot pending'; statusText.textContent = 'Reconnexion…'; });
+  client.on('close', () => { dot.className = 'dot'; statusText.textContent = 'Déconnecté'; });
+  client.on('error', (err) => { showError('Erreur de connexion : ' + (err && err.message ? err.message : err)); });
+
+  client.on('message', (topic, payload) => {
+    let data;
+    try { data = JSON.parse(payload.toString()); } catch(e){ return; }
+
+    if (topic === topicNote){
+      if (data.editor === myName) { state = data; renderMeta(); return; }
+      if (isTyping){
+        pendingRemote = data;
+        banner.style.display = 'block';
+      } else {
+        applyRemote(data);
+      }
+    }
+
+    if (topic === topicTyping && data.name !== myName){
+      typingUsers[data.name] = Date.now();
+      renderTyping();
+    }
+  });
+
+  function applyRemote(data){
+    state = data;
+    noteEl.value = data.text || '';
+    banner.style.display = 'none';
+    pendingRemote = null;
+    renderMeta();
+  }
+
+  function renderMeta(){
+    if (state.editor){
+      const t = new Date(state.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+      statusText.textContent = `Dernière modif par ${state.editor} à ${t}`;
+    }
+    undoBtn.style.display = (state.editor === myName && state.history && state.history.length) ? 'inline-block' : 'none';
+  }
+
+  function renderTyping(){
+    const now = Date.now();
+    const names = Object.keys(typingUsers).filter(n => now - typingUsers[n] < 3000);
+    typingEl.textContent = names.length ? `✏️ ${names.join(', ')} en train d'écrire…` : '';
+  }
+  setInterval(renderTyping, 1000);
+
+  banner.addEventListener('click', () => { if (pendingRemote) applyRemote(pendingRemote); });
+
+  noteEl.addEventListener('input', () => {
+    isTyping = true;
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => { isTyping = false; if (pendingRemote) applyRemote(pendingRemote); }, 700);
+
+    const now = Date.now();
+    if (now - lastTypingSent > 1200){
+      lastTypingSent = now;
+      client.publish(topicTyping, JSON.stringify({name: myName, ts: now}));
+    }
+
+    clearTimeout(publishTimer);
+    publishTimer = setTimeout(publishNote, 700);
+  });
+
+  function publishNote(){
+    const history = (state.editor ? [{text: state.text, editor: state.editor, ts: state.ts}] : [])
+      .concat(state.history || []).slice(0,5);
+    const newState = { text: noteEl.value, editor: myName, ts: Date.now(), history };
+    state = newState;
+    client.publish(topicNote, JSON.stringify(newState), { retain: true });
+    renderMeta();
+  }
+
+  undoBtn.addEventListener('click', () => {
+    if (!state.history || !state.history.length) return;
+    const prev = state.history[0];
+    const newState = { text: prev.text, editor: myName, ts: Date.now(), history: state.history.slice(1) };
+    state = newState;
+    noteEl.value = prev.text;
+    client.publish(topicNote, JSON.stringify(newState), { retain: true });
+    renderMeta();
+  });
+
+  shareBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(location.href).then(() => {
+      shareBtn.textContent = 'Lien copié ✓';
+      setTimeout(() => shareBtn.textContent = 'Copier le lien', 1500);
+    }).catch(() => { showError("Impossible de copier automatiquement, copie le lien manuellement dans la barre d'adresse."); });
+  });
+
+  nameOk.addEventListener('click', enterRoom);
+  nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') enterRoom(); });
+
+  function enterRoom(){
+    const val = nameInput.value.trim();
+    if (!val) return;
+    myName = val;
+    localStorage.setItem('note_name', myName);
+    nameOverlay.style.display = 'none';
+  }
+
+  if (myName){ nameOverlay.style.display = 'none'; } else { nameOverlay.style.display = 'flex'; }
+}
 </script>
 
 </body>
