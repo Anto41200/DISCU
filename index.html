@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Note partagée v2</title>
+<title>Note partagée v3</title>
 <style>
   :root{ --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e8eaed; --muted:#8a90a0; --accent:#5b8cff; --err:#e05353; --ok:#4caf6d; }
   *{box-sizing:border-box}
@@ -19,9 +19,19 @@
     padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px}
   #shareBtn:hover{border-color:var(--accent)}
   #errorBanner{display:none;background:#3a1f1f;color:#ffb3b3;padding:10px 16px;font-size:13px;border-bottom:1px solid #5a2a2a}
-  #note{flex:1;width:100%;background:var(--bg);color:var(--text);border:none;outline:none;
-    padding:20px;font-size:15px;line-height:1.5;resize:none;font-family:inherit}
-  #note:disabled{opacity:.5}
+
+  #noteWrap{flex:1;position:relative;overflow:auto}
+  #note{min-height:100%;width:100%;background:var(--bg);color:var(--text);
+    padding:20px;font-size:15px;line-height:1.5;font-family:inherit;
+    white-space:pre-wrap;word-wrap:break-word;outline:none}
+  #note[contenteditable="false"]{opacity:.5}
+
+  .cursor{position:absolute;width:2px;pointer-events:none;z-index:5;
+    transition:top .09s linear, left .09s linear, opacity .2s linear}
+  .cursor .label{position:absolute;top:-19px;left:-1px;font-size:11px;line-height:1.4;
+    padding:1px 6px;border-radius:4px 4px 4px 0;white-space:nowrap;color:#0b0d11;font-weight:600}
+  .cursor .caretline{position:absolute;top:0;left:0;width:2px;height:1.4em}
+
   #bar{display:flex;align-items:center;gap:12px;padding:8px 16px;border-top:1px solid var(--border);
     font-size:12px;color:var(--muted);min-height:36px;flex-wrap:wrap}
   #undoBtn{margin-left:auto;background:var(--panel);border:1px solid var(--border);color:var(--text);
@@ -42,20 +52,21 @@
 
 <header>
   <span class="dot" id="dot" title="statut de connexion"></span>
-  <h1>📝 Note partagée <small style="color:var(--muted);font-weight:400">v2</small></h1>
+  <h1>📝 Note partagée <small style="color:var(--muted);font-weight:400">v3</small></h1>
   <span class="room" id="roomLabel"></span>
   <button id="shareBtn">Copier le lien</button>
 </header>
 
 <div id="errorBanner"></div>
 
-<textarea id="note" placeholder="Écris ici… tout ce que tu tapes est visible par tous ceux qui ont le lien, en direct." disabled></textarea>
+<div id="noteWrap">
+  <div id="note" contenteditable="false" data-placeholder="Écris ici… tout ce que tu tapes est visible par tous ceux qui ont le lien, en direct."></div>
+</div>
 
 <div id="banner" class="banner">Nouvelle version disponible — cliquer pour charger</div>
 
 <div id="bar">
   <span id="statusText">Connexion…</span>
-  <span id="typing"></span>
   <button id="undoBtn">↩️ Annuler ma dernière modif</button>
 </div>
 
@@ -110,13 +121,80 @@ async function loadMqttLib(){
   startApp();
 })();
 
+// ---------- Réglages de rapidité ----------
+const NOTE_DEBOUNCE_MS   = 150;  // délai avant d'envoyer le texte tapé (avant: 700ms)
+const MERGE_GRACE_MS     = 400;  // délai avant d'appliquer une modif distante reçue pendant qu'on tape (avant: 700ms)
+const CURSOR_THROTTLE_MS = 80;   // fréquence d'envoi de la position du curseur
+const CURSOR_TTL_MS      = 4000; // au-delà, on efface le curseur d'un pseudo inactif
+
+const CURSOR_COLORS = ['#5b8cff','#4caf6d','#e0a953','#e05353','#c17ed6','#3fb8c9','#e08ac1','#8fc74a'];
+function colorForName(name){
+  let h = 0;
+  for (let i=0;i<name.length;i++){ h = (h*31 + name.charCodeAt(i)) >>> 0; }
+  return CURSOR_COLORS[h % CURSOR_COLORS.length];
+}
+
+// ---------- Outils curseur / offset dans le contenteditable ----------
+function getPlainText(el){ return el.textContent || ''; }
+
+function getCaretOffset(el){
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+  if (!el.contains(range.startContainer)) return null;
+  const pre = range.cloneRange();
+  pre.selectNodeContents(el);
+  pre.setEnd(range.startContainer, range.startOffset);
+  return pre.toString().length;
+}
+
+// Construit un Range qui pointe sur le caractère `offset` dans el (texte pur uniquement)
+function rangeAtOffset(el, offset){
+  const range = document.createRange();
+  let remaining = offset, found = false;
+  (function walk(n){
+    if (found) return;
+    if (n.nodeType === Node.TEXT_NODE){
+      if (remaining <= n.length){
+        range.setStart(n, Math.max(0, remaining));
+        range.collapse(true);
+        found = true;
+      } else {
+        remaining -= n.length;
+      }
+    } else {
+      for (const child of n.childNodes){ walk(child); if (found) return; }
+    }
+  })(el);
+  if (!found){ range.selectNodeContents(el); range.collapse(false); }
+  return range;
+}
+
+function setCaretOffset(el, offset){
+  const range = rangeAtOffset(el, offset);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function getCoordsAtOffset(el, offset){
+  const range = rangeAtOffset(el, offset);
+  let rect = range.getClientRects()[0];
+  if (!rect){
+    // fin de ligne / conteneur vide : on retombe sur le rect de l'élément lui-même
+    const r2 = el.getBoundingClientRect();
+    rect = { top:r2.top, left:r2.left, height:20 };
+  }
+  return rect;
+}
+
 function startApp(){
   const noteEl = document.getElementById('note');
+  const noteWrap = document.getElementById('noteWrap');
   const dot = document.getElementById('dot');
   const roomLabel = document.getElementById('roomLabel');
   const shareBtn = document.getElementById('shareBtn');
   const statusText = document.getElementById('statusText');
-  const typingEl = document.getElementById('typing');
   const undoBtn = document.getElementById('undoBtn');
   const banner = document.getElementById('banner');
   const nameOverlay = document.getElementById('nameOverlay');
@@ -131,36 +209,42 @@ function startApp(){
   roomLabel.textContent = 'salon #' + roomId;
 
   let myName = localStorage.getItem('note_name') || '';
-  const topicNote = 'note-partagee-app-v2/' + roomId + '/state';
-  const topicTyping = 'note-partagee-app-v2/' + roomId + '/typing';
+  const topicNote   = 'note-partagee-app-v3/' + roomId + '/state';
+  const topicCursor = 'note-partagee-app-v3/' + roomId + '/cursor';
 
   let state = { text:'', editor:'', ts:0, history:[] };
   let isTyping = false;
   let pendingRemote = null;
   let typingTimer = null;
   let publishTimer = null;
-  let lastTypingSent = 0;
-  const typingUsers = {};
+  let cursorThrottleTimer = null;
+  let lastCursorSent = 0;
+
+  // curseurs distants : { name: {offset, ts, el} }
+  const remoteCursors = {};
 
   dot.className = 'dot pending';
   statusText.textContent = 'Connexion au serveur…';
 
   const connectTimeout = setTimeout(() => {
     if (dot.className.indexOf('ok') === -1){
-      showError("Connexion au serveur impossible après 10 secondes. Vérifie ta connexion internet, ou que ton réseau (pare-feu d'entreprise/école) n'bloque pas les WebSockets sécurisées (port 8884).");
+      showError("Connexion au serveur impossible après 10 secondes. Vérifie ta connexion internet, ou que ton réseau (pare-feu d'entreprise/école) ne bloque pas les WebSockets sécurisées (port 8884).");
     }
   }, 10000);
 
-  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', { reconnectPeriod: 2000, connectTimeout: 8000 });
+  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
+    reconnectPeriod: 1000,
+    connectTimeout: 5000
+  });
 
   client.on('connect', () => {
     clearTimeout(connectTimeout);
     dot.className = 'dot ok';
     statusText.textContent = 'Connecté';
-    noteEl.disabled = false;
+    noteEl.setAttribute('contenteditable', myName ? 'plaintext-only' : 'false');
     document.getElementById('errorBanner').style.display = 'none';
-    client.subscribe(topicNote);
-    client.subscribe(topicTyping);
+    client.subscribe(topicNote, { qos: 0 });
+    client.subscribe(topicCursor, { qos: 0 });
   });
   client.on('reconnect', () => { dot.className = 'dot pending'; statusText.textContent = 'Reconnexion…'; });
   client.on('close', () => { dot.className = 'dot'; statusText.textContent = 'Déconnecté'; });
@@ -180,18 +264,28 @@ function startApp(){
       }
     }
 
-    if (topic === topicTyping && data.name !== myName){
-      typingUsers[data.name] = Date.now();
-      renderTyping();
+    if (topic === topicCursor && data.name && data.name !== myName){
+      if (data.left){
+        removeCursor(data.name);
+      } else {
+        remoteCursors[data.name] = { offset: data.offset, ts: Date.now() };
+        renderCursors();
+      }
     }
   });
 
   function applyRemote(data){
+    // on garde la position du caret local si possible pendant qu'on remplace le texte
+    const myOffset = document.activeElement === noteEl ? getCaretOffset(noteEl) : null;
     state = data;
-    noteEl.value = data.text || '';
+    noteEl.textContent = data.text || '';
+    if (myOffset !== null){
+      setCaretOffset(noteEl, Math.min(myOffset, noteEl.textContent.length));
+    }
     banner.style.display = 'none';
     pendingRemote = null;
     renderMeta();
+    renderCursors();
   }
 
   function renderMeta(){
@@ -202,36 +296,94 @@ function startApp(){
     undoBtn.style.display = (state.editor === myName && state.history && state.history.length) ? 'inline-block' : 'none';
   }
 
-  function renderTyping(){
-    const now = Date.now();
-    const names = Object.keys(typingUsers).filter(n => now - typingUsers[n] < 3000);
-    typingEl.textContent = names.length ? `✏️ ${names.join(', ')} en train d'écrire…` : '';
+  // ---------- Curseurs des autres personnes ----------
+  function removeCursor(name){
+    const c = remoteCursors[name];
+    if (c && c.el) c.el.remove();
+    delete remoteCursors[name];
   }
-  setInterval(renderTyping, 1000);
+
+  function renderCursors(){
+    const now = Date.now();
+    for (const name of Object.keys(remoteCursors)){
+      const c = remoteCursors[name];
+      if (now - c.ts > CURSOR_TTL_MS){ removeCursor(name); continue; }
+
+      let el = c.el;
+      if (!el){
+        el = document.createElement('div');
+        el.className = 'cursor';
+        const color = colorForName(name);
+        el.style.background = color;
+        const label = document.createElement('div');
+        label.className = 'label';
+        label.style.background = color;
+        label.textContent = name;
+        el.appendChild(label);
+        noteWrap.appendChild(el);
+        c.el = el;
+      }
+
+      const offset = Math.min(c.offset, noteEl.textContent.length);
+      const rect = getCoordsAtOffset(noteEl, offset);
+      const wrapRect = noteWrap.getBoundingClientRect();
+      el.style.left = (rect.left - wrapRect.left + noteWrap.scrollLeft) + 'px';
+      el.style.top = (rect.top - wrapRect.top + noteWrap.scrollTop) + 'px';
+      el.style.height = (rect.height || 20) + 'px';
+    }
+  }
+  setInterval(renderCursors, 1000); // nettoie les curseurs inactifs même sans nouvel event
+  noteWrap.addEventListener('scroll', renderCursors);
+  window.addEventListener('resize', renderCursors);
+
+  function sendCursor(){
+    const offset = getCaretOffset(noteEl);
+    if (offset === null) return;
+    const now = Date.now();
+    if (now - lastCursorSent < CURSOR_THROTTLE_MS){
+      clearTimeout(cursorThrottleTimer);
+      cursorThrottleTimer = setTimeout(sendCursor, CURSOR_THROTTLE_MS);
+      return;
+    }
+    lastCursorSent = now;
+    client.publish(topicCursor, JSON.stringify({ name: myName, offset, ts: now }), { qos: 0 });
+  }
 
   banner.addEventListener('click', () => { if (pendingRemote) applyRemote(pendingRemote); });
+
+  // Frappe au clavier : on force du texte pur (pas de <br>/<div>) pour que les offsets
+  // du curseur restent fiables, et on répercute la modif très vite pour réduire le lag.
+  noteEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter'){
+      e.preventDefault();
+      document.execCommand('insertText', false, '\n');
+    }
+  });
+  noteEl.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, text);
+  });
 
   noteEl.addEventListener('input', () => {
     isTyping = true;
     clearTimeout(typingTimer);
-    typingTimer = setTimeout(() => { isTyping = false; if (pendingRemote) applyRemote(pendingRemote); }, 700);
+    typingTimer = setTimeout(() => { isTyping = false; if (pendingRemote) applyRemote(pendingRemote); }, MERGE_GRACE_MS);
 
-    const now = Date.now();
-    if (now - lastTypingSent > 1200){
-      lastTypingSent = now;
-      client.publish(topicTyping, JSON.stringify({name: myName, ts: now}));
-    }
+    sendCursor();
 
     clearTimeout(publishTimer);
-    publishTimer = setTimeout(publishNote, 700);
+    publishTimer = setTimeout(publishNote, NOTE_DEBOUNCE_MS);
   });
+
+  ['keyup','click','focus'].forEach(evt => noteEl.addEventListener(evt, sendCursor));
 
   function publishNote(){
     const history = (state.editor ? [{text: state.text, editor: state.editor, ts: state.ts}] : [])
       .concat(state.history || []).slice(0,5);
-    const newState = { text: noteEl.value, editor: myName, ts: Date.now(), history };
+    const newState = { text: getPlainText(noteEl), editor: myName, ts: Date.now(), history };
     state = newState;
-    client.publish(topicNote, JSON.stringify(newState), { retain: true });
+    client.publish(topicNote, JSON.stringify(newState), { qos: 0, retain: true });
     renderMeta();
   }
 
@@ -240,8 +392,8 @@ function startApp(){
     const prev = state.history[0];
     const newState = { text: prev.text, editor: myName, ts: Date.now(), history: state.history.slice(1) };
     state = newState;
-    noteEl.value = prev.text;
-    client.publish(topicNote, JSON.stringify(newState), { retain: true });
+    noteEl.textContent = prev.text;
+    client.publish(topicNote, JSON.stringify(newState), { qos: 0, retain: true });
     renderMeta();
   });
 
@@ -250,6 +402,16 @@ function startApp(){
       shareBtn.textContent = 'Lien copié ✓';
       setTimeout(() => shareBtn.textContent = 'Copier le lien', 1500);
     }).catch(() => { showError("Impossible de copier automatiquement, copie le lien manuellement dans la barre d'adresse."); });
+  });
+
+  // Signale son départ le plus tôt possible pour que le curseur disparaisse vite chez les autres
+  window.addEventListener('pagehide', () => {
+    try { client.publish(topicCursor, JSON.stringify({ name: myName, left: true }), { qos: 0 }); } catch(e){}
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden){
+      try { client.publish(topicCursor, JSON.stringify({ name: myName, left: true }), { qos: 0 }); } catch(e){}
+    }
   });
 
   nameOk.addEventListener('click', enterRoom);
@@ -261,6 +423,9 @@ function startApp(){
     myName = val;
     localStorage.setItem('note_name', myName);
     nameOverlay.style.display = 'none';
+    if (client.connected){
+      noteEl.setAttribute('contenteditable', 'plaintext-only');
+    }
   }
 
   if (myName){ nameOverlay.style.display = 'none'; } else { nameOverlay.style.display = 'flex'; }
