@@ -3,165 +3,299 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Note partagée v3</title>
+<title>Note partagée v4</title>
 <style>
-  :root{ --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e8eaed; --muted:#8a90a0; --accent:#5b8cff; --err:#e05353; --ok:#4caf6d; }
+  :root{ --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e8eaed; --muted:#8a90a0; --accent:#5b8cff; --err:#e05353; --ok:#4caf6d; --hl:rgba(91,140,255,.18); }
+  html[data-theme="light"]{ --bg:#f5f6f8; --panel:#ffffff; --border:#dde1e8; --text:#1b1d22; --muted:#5c6270; --accent:#3f6fe0; --err:#c62b2b; --ok:#2e8b52; --hl:rgba(63,111,224,.12); }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
     background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column}
-  header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  header h1{font-size:16px;margin:0;font-weight:600;white-space:nowrap}
+  button{font-family:inherit}
+  header{padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;font-weight:600;white-space:nowrap}
   .dot{width:9px;height:9px;border-radius:50%;background:var(--err);flex-shrink:0}
   .dot.ok{background:var(--ok)}
   .dot.pending{background:#e0a953}
-  .room{color:var(--muted);font-size:12px}
-  #shareBtn{margin-left:auto;background:var(--panel);border:1px solid var(--border);color:var(--text);
-    padding:6px 12px;border-radius:8px;cursor:pointer;font-size:13px}
-  #shareBtn:hover{border-color:var(--accent)}
+  .iconBtn{background:var(--panel);border:1px solid var(--border);color:var(--text);
+    padding:6px 10px;border-radius:8px;cursor:pointer;font-size:13px}
+  .iconBtn:hover{border-color:var(--accent)}
+  .spacer{margin-left:auto}
   #errorBanner{display:none;background:#3a1f1f;color:#ffb3b3;padding:10px 16px;font-size:13px;border-bottom:1px solid #5a2a2a}
+  html[data-theme="light"] #errorBanner{background:#ffe3e3;color:#8a1f1f;border-color:#f0b8b8}
+
+  #tabbar{display:flex;align-items:center;gap:6px;padding:6px 16px;border-bottom:1px solid var(--border);overflow-x:auto}
+  .tabBtn{background:transparent;border:1px solid transparent;color:var(--muted);padding:5px 10px;border-radius:7px;cursor:pointer;font-size:12.5px;white-space:nowrap}
+  .tabBtn.active{background:var(--panel);border-color:var(--border);color:var(--text);font-weight:600}
+  .tabBtn:hover{color:var(--text)}
+  #addTabBtn{background:transparent;border:1px dashed var(--border);color:var(--muted);padding:5px 9px;border-radius:7px;cursor:pointer;font-size:12.5px}
+
+  #toolbar{display:flex;gap:6px;padding:6px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  #toolbar button{background:var(--panel);border:1px solid var(--border);color:var(--text);
+    padding:4px 9px;border-radius:6px;cursor:pointer;font-size:12.5px}
+  #toolbar button:hover{border-color:var(--accent)}
 
   #noteWrap{flex:1;position:relative;overflow:auto}
   #note{min-height:100%;width:100%;background:var(--bg);color:var(--text);
     padding:20px;font-size:15px;line-height:1.5;font-family:inherit;
     white-space:pre-wrap;word-wrap:break-word;outline:none}
-  #note[contenteditable="false"]{opacity:.5}
+  #note[contenteditable="false"]{opacity:.6}
 
-  .cursor{position:absolute;width:2px;pointer-events:none;z-index:5;
-    transition:top .09s linear, left .09s linear, opacity .2s linear}
+  .cursor{position:absolute;width:2px;pointer-events:none;z-index:6;transition:top .09s linear, left .09s linear}
   .cursor .label{position:absolute;top:-19px;left:-1px;font-size:11px;line-height:1.4;
     padding:1px 6px;border-radius:4px 4px 4px 0;white-space:nowrap;color:#0b0d11;font-weight:600}
-  .cursor .caretline{position:absolute;top:0;left:0;width:2px;height:1.4em}
+  .selRect{position:absolute;pointer-events:none;z-index:3;opacity:.28;border-radius:2px}
 
-  #bar{display:flex;align-items:center;gap:12px;padding:8px 16px;border-top:1px solid var(--border);
+  #collisionBanner{display:none;position:sticky;top:0;background:#3a2f1f;color:#f0c98a;padding:6px 14px;font-size:12.5px;border-bottom:1px solid #5a4a2a}
+  html[data-theme="light"] #collisionBanner{background:#fff3d6;color:#7a5a10;border-color:#f0dca0}
+
+  #bar{display:flex;align-items:center;gap:14px;padding:8px 16px;border-top:1px solid var(--border);
     font-size:12px;color:var(--muted);min-height:36px;flex-wrap:wrap}
-  #undoBtn{margin-left:auto;background:var(--panel);border:1px solid var(--border);color:var(--text);
+  #undoBtn{background:var(--panel);border:1px solid var(--border);color:var(--text);
     padding:5px 10px;border-radius:8px;cursor:pointer;font-size:12px;display:none}
   #undoBtn:hover{border-color:var(--accent)}
-  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:10}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:360px;width:90%}
+
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:20}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:380px;width:90%;max-height:80vh;overflow:auto}
   .card h2{margin-top:0;font-size:16px}
-  .card input{width:100%;margin:10px 0;padding:10px;border-radius:8px;border:1px solid var(--border);
+  .card input, .card select{width:100%;margin:6px 0 14px;padding:9px;border-radius:8px;border:1px solid var(--border);
     background:var(--bg);color:var(--text)}
-  .card button{width:100%;background:var(--accent);color:#fff;border:none;padding:10px;border-radius:8px;
+  .card label{font-size:12.5px;color:var(--muted)}
+  .card button.primary{width:100%;background:var(--accent);color:#fff;border:none;padding:10px;border-radius:8px;
     cursor:pointer;font-size:14px;font-weight:600}
-  .banner{position:fixed;bottom:56px;left:50%;transform:translateX(-50%);background:var(--accent);
-    color:#fff;padding:8px 14px;border-radius:20px;font-size:13px;cursor:pointer;display:none}
+  .card .closeX{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer}
+  .card{position:relative}
+
+  .presenceRow, .historyRow{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
+  .presenceRow:last-child, .historyRow:last-child{border-bottom:none}
+  .swatch{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+  .historyRow .txt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+  .historyRow button{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer}
+
+  #qrBox{text-align:center}
+  #qrBox img{border-radius:8px;margin-bottom:10px;background:#fff;padding:6px}
+  #qrBox .link{font-size:12px;color:var(--muted);word-break:break-all}
+
+  @media print{
+    header,#tabbar,#toolbar,#bar,#errorBanner,.overlay,.cursor,.selRect,#collisionBanner{display:none !important}
+    #noteWrap{overflow:visible}
+    body{height:auto}
+  }
 </style>
 </head>
 <body>
 
 <header>
   <span class="dot" id="dot" title="statut de connexion"></span>
-  <h1>📝 Note partagée <small style="color:var(--muted);font-weight:400">v3</small></h1>
-  <span class="room" id="roomLabel"></span>
-  <button id="shareBtn">Copier le lien</button>
+  <h1>📝 Note partagée <small style="color:var(--muted);font-weight:400">v4</small></h1>
+  <span class="spacer"></span>
+  <button class="iconBtn" id="themeBtn" title="Thème">🌓</button>
+  <button class="iconBtn" id="presenceBtn" title="Qui est en ligne">👥 <span id="presenceCount">0</span></button>
+  <button class="iconBtn" id="historyBtn" title="Historique">🕓</button>
+  <button class="iconBtn" id="settingsBtn" title="Réglages">⚙️</button>
+  <button class="iconBtn" id="shareBtn" title="Partager">🔗 Partager</button>
 </header>
 
-<div id="errorBanner"></div>
+<div id="tabbar"></div>
 
-<div id="noteWrap">
-  <div id="note" contenteditable="false" data-placeholder="Écris ici… tout ce que tu tapes est visible par tous ceux qui ont le lien, en direct."></div>
+<div id="toolbar">
+  <button id="boldBtn" title="Entourer la sélection de **gras**"><b>G</b></button>
+  <button id="italicBtn" title="Entourer la sélection de *italique*"><i>I</i></button>
+  <button id="listBtn" title="Transformer les lignes sélectionnées en liste">• Liste</button>
+  <button id="exportTxtBtn">Exporter .txt</button>
+  <button id="exportMdBtn">Exporter .md</button>
+  <button id="printBtn">Imprimer / PDF</button>
 </div>
 
-<div id="banner" class="banner">Nouvelle version disponible — cliquer pour charger</div>
+<div id="errorBanner"></div>
+<div id="collisionBanner"></div>
+
+<div id="noteWrap">
+  <div id="note" contenteditable="false" data-placeholder="Écris ici… tout ce que tu tapes est visible par tous, en direct."></div>
+</div>
 
 <div id="bar">
   <span id="statusText">Connexion…</span>
+  <span id="countText"></span>
+  <span class="spacer"></span>
+  <span id="pingText"></span>
   <button id="undoBtn">↩️ Annuler ma dernière modif</button>
 </div>
 
+<!-- Mot de passe du site -->
+<div class="overlay" id="pwOverlay" style="display:none">
+  <div class="card">
+    <h2>Accès protégé</h2>
+    <p style="font-size:12.5px;color:var(--muted);margin-top:-8px">
+      ⚠️ Ce site est statique : ce mot de passe est un simple filtre côté navigateur, pas une vraie sécurité
+      (n'importe qui peut le lire dans le code source).
+    </p>
+    <input type="password" id="pwInput" placeholder="Mot de passe">
+    <button class="primary" id="pwOk">Entrer</button>
+  </div>
+</div>
+
+<!-- Pseudo -->
 <div class="overlay" id="nameOverlay">
   <div class="card">
     <h2>Choisis un pseudo</h2>
     <input type="text" id="nameInput" placeholder="Ton prénom / pseudo" maxlength="24">
-    <button id="nameOk">Entrer</button>
+    <label>Couleur de ton curseur</label>
+    <input type="color" id="colorInput" value="#5b8cff">
+    <button class="primary" id="nameOk">Entrer</button>
+  </div>
+</div>
+
+<!-- Présence -->
+<div class="overlay" id="presenceOverlay" style="display:none">
+  <div class="card">
+    <button class="closeX" data-close="presenceOverlay">✕</button>
+    <h2>En ligne</h2>
+    <div id="presenceList"></div>
+  </div>
+</div>
+
+<!-- Historique -->
+<div class="overlay" id="historyOverlay" style="display:none">
+  <div class="card">
+    <button class="closeX" data-close="historyOverlay">✕</button>
+    <h2>Historique — <span id="historyTabName"></span></h2>
+    <div id="historyList"></div>
+  </div>
+</div>
+
+<!-- Réglages -->
+<div class="overlay" id="settingsOverlay" style="display:none">
+  <div class="card">
+    <button class="closeX" data-close="settingsOverlay">✕</button>
+    <h2>Réglages</h2>
+    <label>Serveur MQTT (broker)</label>
+    <input type="text" id="brokerInput">
+    <label>Couleur de curseur</label>
+    <input type="color" id="colorInputSettings">
+    <button class="primary" id="settingsSave">Enregistrer et recharger</button>
+  </div>
+</div>
+
+<!-- Partager / QR -->
+<div class="overlay" id="shareOverlay" style="display:none">
+  <div class="card" id="qrBox">
+    <button class="closeX" data-close="shareOverlay">✕</button>
+    <h2>Partager</h2>
+    <img id="qrImg" width="180" height="180" alt="QR code du lien">
+    <div class="link" id="shareLinkText"></div>
+    <button class="iconBtn" id="copyLinkBtn" style="margin-top:10px;width:100%">Copier le lien</button>
+    <p style="font-size:11.5px;color:var(--muted);margin-top:10px">
+      Le QR code et le lien pointent vers le générateur d'images d'un service tiers (api.qrserver.com) ;
+      seule l'URL de cette page lui est envoyée, jamais le contenu de la note.
+    </p>
   </div>
 </div>
 
 <script>
-function showError(msg){
-  const b = document.getElementById('errorBanner');
-  b.textContent = '⚠️ ' + msg;
-  b.style.display = 'block';
-  document.getElementById('dot').className = 'dot';
-  document.getElementById('statusText').textContent = 'Erreur';
-}
+/* ===================== Config ===================== */
+const DEFAULT_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
+// Mot de passe du site : change cette valeur avant de déployer.
+// Rappel : c'est un filtre côté client, pas une vraie protection (voir bandeau dans l'overlay).
+const SITE_PASSWORD = ''; // laisse vide pour désactiver le mot de passe
 
-// Charge la librairie MQTT depuis 2 sources différentes, la première qui marche est utilisée.
-function loadScript(src){
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
+const LS_PW_OK   = 'note_pw_ok';
+const LS_NAME    = 'note_name';
+const LS_COLOR   = 'note_color';
+const LS_BROKER  = 'note_broker';
+const LS_THEME   = 'note_theme';
+const LS_TAB     = 'note_active_tab';
+const AUTOSAVE_PREFIX = 'note_autosave_';
 
-async function loadMqttLib(){
-  const sources = [
-    'https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js',
-    'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js'
-  ];
-  for (const src of sources){
-    try{
-      await loadScript(src);
-      if (window.mqtt) return true;
-    }catch(e){ /* essaie la source suivante */ }
-  }
-  return false;
-}
+const NOTE_DEBOUNCE_MS   = 150;
+const MERGE_GRACE_MS     = 400;
+const CURSOR_THROTTLE_MS = 80;
+const CURSOR_TTL_MS      = 4000;
+const PRESENCE_INTERVAL_MS = 5000;
+const PRESENCE_TTL_MS      = 13000;
+const PING_INTERVAL_MS     = 4000;
+const COLLISION_DISTANCE   = 40;
+const HISTORY_CAP          = 50;
 
-(async function main(){
-  const ok = await loadMqttLib();
-  if (!ok){
-    showError("Impossible de charger la bibliothèque de connexion (bloquée par le réseau, un bloqueur de pub, ou pas d'accès internet). Essaie sur un autre réseau ou désactive ton bloqueur de pub pour ce site.");
-    return;
-  }
-  startApp();
+const isReadonly = new URLSearchParams(location.search).get('readonly') === '1';
+
+/* ===================== Thème ===================== */
+(function initTheme(){
+  const saved = localStorage.getItem(LS_THEME);
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
 })();
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  const next = cur === 'light' ? 'dark' : 'light';
+  if (next === 'light') document.documentElement.setAttribute('data-theme','light');
+  else document.documentElement.removeAttribute('data-theme');
+  localStorage.setItem(LS_THEME, next);
+});
 
-// ---------- Réglages de rapidité ----------
-const NOTE_DEBOUNCE_MS   = 150;  // délai avant d'envoyer le texte tapé (avant: 700ms)
-const MERGE_GRACE_MS     = 400;  // délai avant d'appliquer une modif distante reçue pendant qu'on tape (avant: 700ms)
-const CURSOR_THROTTLE_MS = 80;   // fréquence d'envoi de la position du curseur
-const CURSOR_TTL_MS      = 4000; // au-delà, on efface le curseur d'un pseudo inactif
+/* ===================== Mot de passe du site ===================== */
+function checkPassword(){
+  if (!SITE_PASSWORD){ afterPasswordOk(); return; }
+  if (localStorage.getItem(LS_PW_OK) === '1'){ afterPasswordOk(); return; }
+  document.getElementById('pwOverlay').style.display = 'flex';
+}
+document.getElementById('pwOk').addEventListener('click', () => {
+  const val = document.getElementById('pwInput').value;
+  if (val === SITE_PASSWORD){
+    localStorage.setItem(LS_PW_OK, '1');
+    document.getElementById('pwOverlay').style.display = 'none';
+    afterPasswordOk();
+  } else {
+    document.getElementById('pwInput').style.borderColor = 'var(--err)';
+  }
+});
+function afterPasswordOk(){ boot(); }
 
-const CURSOR_COLORS = ['#5b8cff','#4caf6d','#e0a953','#e05353','#c17ed6','#3fb8c9','#e08ac1','#8fc74a'];
+/* ===================== Utilitaires panneaux ===================== */
+document.querySelectorAll('[data-close]').forEach(btn => {
+  btn.addEventListener('click', () => { document.getElementById(btn.dataset.close).style.display = 'none'; });
+});
+
+function slugify(s){
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || 'note';
+}
 function colorForName(name){
+  const palette = ['#5b8cff','#4caf6d','#e0a953','#e05353','#c17ed6','#3fb8c9','#e08ac1','#8fc74a'];
   let h = 0;
   for (let i=0;i<name.length;i++){ h = (h*31 + name.charCodeAt(i)) >>> 0; }
-  return CURSOR_COLORS[h % CURSOR_COLORS.length];
+  return palette[h % palette.length];
 }
 
-// ---------- Outils curseur / offset dans le contenteditable ----------
+/* ===================== Caret / sélection dans le contenteditable ===================== */
 function getPlainText(el){ return el.textContent || ''; }
 
 function getCaretOffset(el){
   const sel = window.getSelection();
   if (!sel.rangeCount) return null;
-  const range = sel.getRangeAt(0);
-  if (!el.contains(range.startContainer)) return null;
-  const pre = range.cloneRange();
+  const r = sel.getRangeAt(0);
+  if (!el.contains(r.startContainer)) return null;
+  const pre = r.cloneRange();
   pre.selectNodeContents(el);
-  pre.setEnd(range.startContainer, range.startOffset);
+  pre.setEnd(r.startContainer, r.startOffset);
   return pre.toString().length;
 }
-
-// Construit un Range qui pointe sur le caractère `offset` dans el (texte pur uniquement)
+function getSelectionRange(el){
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  if (!el.contains(r.startContainer) || !el.contains(r.endContainer)) return null;
+  const preS = r.cloneRange(); preS.selectNodeContents(el); preS.setEnd(r.startContainer, r.startOffset);
+  const preE = r.cloneRange(); preE.selectNodeContents(el); preE.setEnd(r.endContainer, r.endOffset);
+  const s = preS.toString().length, e = preE.toString().length;
+  return s === e ? null : { start: Math.min(s,e), end: Math.max(s,e) };
+}
 function rangeAtOffset(el, offset){
   const range = document.createRange();
   let remaining = offset, found = false;
   (function walk(n){
     if (found) return;
     if (n.nodeType === Node.TEXT_NODE){
-      if (remaining <= n.length){
-        range.setStart(n, Math.max(0, remaining));
-        range.collapse(true);
-        found = true;
-      } else {
-        remaining -= n.length;
-      }
+      if (remaining <= n.length){ range.setStart(n, Math.max(0, remaining)); range.collapse(true); found = true; }
+      else remaining -= n.length;
     } else {
       for (const child of n.childNodes){ walk(child); if (found) return; }
     }
@@ -169,123 +303,234 @@ function rangeAtOffset(el, offset){
   if (!found){ range.selectNodeContents(el); range.collapse(false); }
   return range;
 }
-
 function setCaretOffset(el, offset){
   const range = rangeAtOffset(el, offset);
   const sel = window.getSelection();
   sel.removeAllRanges();
   sel.addRange(range);
 }
-
 function getCoordsAtOffset(el, offset){
   const range = rangeAtOffset(el, offset);
   let rect = range.getClientRects()[0];
-  if (!rect){
-    // fin de ligne / conteneur vide : on retombe sur le rect de l'élément lui-même
-    const r2 = el.getBoundingClientRect();
-    rect = { top:r2.top, left:r2.left, height:20 };
-  }
+  if (!rect){ const r2 = el.getBoundingClientRect(); rect = { top:r2.top, left:r2.left, height:20 }; }
   return rect;
 }
+function getRectsForRange(el, start, end){
+  const range = document.createRange();
+  const rs = rangeAtOffset(el, start), re = rangeAtOffset(el, end);
+  range.setStart(rs.startContainer, rs.startOffset);
+  range.setEnd(re.startContainer, re.startOffset);
+  return Array.from(range.getClientRects());
+}
 
-function startApp(){
+/* ===================== App ===================== */
+function boot(){
+  // Overlay pseudo
+  const nameOverlay = document.getElementById('nameOverlay');
+  const nameInput = document.getElementById('nameInput');
+  const colorInput = document.getElementById('colorInput');
+  const nameOk = document.getElementById('nameOk');
+
+  let myName = localStorage.getItem(LS_NAME) || '';
+  let myColor = localStorage.getItem(LS_COLOR) || '';
+
+  if (myName){ nameOverlay.style.display = 'none'; startApp(myName, myColor); }
+  else {
+    colorInput.value = colorForName(Math.random().toString(36));
+    nameOverlay.style.display = 'flex';
+    const enter = () => {
+      const val = nameInput.value.trim();
+      if (!val) return;
+      myName = val; myColor = colorInput.value;
+      localStorage.setItem(LS_NAME, myName);
+      localStorage.setItem(LS_COLOR, myColor);
+      nameOverlay.style.display = 'none';
+      startApp(myName, myColor);
+    };
+    nameOk.addEventListener('click', enter);
+    nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') enter(); });
+  }
+}
+
+async function startApp(myName, myColor){
+  // Charge la lib MQTT
+  async function loadScript(src){
+    return new Promise((res, rej) => {
+      const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  async function loadMqttLib(){
+    for (const src of ['https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js','https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js']){
+      try { await loadScript(src); if (window.mqtt) return true; } catch(e){}
+    }
+    return false;
+  }
+
   const noteEl = document.getElementById('note');
   const noteWrap = document.getElementById('noteWrap');
   const dot = document.getElementById('dot');
-  const roomLabel = document.getElementById('roomLabel');
-  const shareBtn = document.getElementById('shareBtn');
   const statusText = document.getElementById('statusText');
+  const countText = document.getElementById('countText');
+  const pingText = document.getElementById('pingText');
   const undoBtn = document.getElementById('undoBtn');
-  const banner = document.getElementById('banner');
-  const nameOverlay = document.getElementById('nameOverlay');
-  const nameInput = document.getElementById('nameInput');
-  const nameOk = document.getElementById('nameOk');
+  const collisionBanner = document.getElementById('collisionBanner');
+  const tabbar = document.getElementById('tabbar');
 
-  let roomId = location.hash.replace('#','');
-  if (!roomId){
-    roomId = Math.random().toString(36).slice(2,10);
-    location.hash = roomId;
+  if (!(await loadMqttLib())){
+    showError("Impossible de charger la bibliothèque de connexion (bloquée par le réseau, un bloqueur de pub, ou pas d'accès internet).");
+    loadAutosaveFallback();
+    return;
   }
-  roomLabel.textContent = 'salon #' + roomId;
 
-  let myName = localStorage.getItem('note_name') || '';
-  const topicNote   = 'note-partagee-app-v3/' + roomId + '/state';
-  const topicCursor = 'note-partagee-app-v3/' + roomId + '/cursor';
+  function showError(msg){
+    const b = document.getElementById('errorBanner');
+    b.textContent = '⚠️ ' + msg;
+    b.style.display = 'block';
+    dot.className = 'dot';
+    statusText.textContent = 'Erreur';
+  }
+
+  const BASE = 'note-partagee-app-v4';
+  const brokerUrl = localStorage.getItem(LS_BROKER) || DEFAULT_BROKER;
+  const clientTag = Math.random().toString(36).slice(2,8);
+  const topicTabs     = BASE + '/tabs';
+  const topicPresence = BASE + '/presence';
+  const topicPing     = BASE + '/ping/' + clientTag;
+
+  let tabs = ['Principale'];
+  let activeTab = localStorage.getItem(LS_TAB) || 'Principale';
+  let tabsReceived = false;
 
   let state = { text:'', editor:'', ts:0, history:[] };
   let isTyping = false;
   let pendingRemote = null;
-  let typingTimer = null;
-  let publishTimer = null;
-  let cursorThrottleTimer = null;
+  let typingTimer = null, publishTimer = null, cursorThrottleTimer = null;
   let lastCursorSent = 0;
-
-  // curseurs distants : { name: {offset, ts, el} }
-  const remoteCursors = {};
+  const remoteCursors = {};   // curseurs de l'onglet actif : name -> {offset, selStart, selEnd, color, ts, el, selEls}
+  const presenceUsers = {};   // name -> {color, ts}
+  let lastPingSent = 0;
 
   dot.className = 'dot pending';
   statusText.textContent = 'Connexion au serveur…';
 
   const connectTimeout = setTimeout(() => {
     if (dot.className.indexOf('ok') === -1){
-      showError("Connexion au serveur impossible après 10 secondes. Vérifie ta connexion internet, ou que ton réseau (pare-feu d'entreprise/école) ne bloque pas les WebSockets sécurisées (port 8884).");
+      showError("Connexion impossible après 10s. Vérifie ta connexion, ou change de serveur MQTT dans les Réglages.");
+      loadAutosaveFallback();
     }
   }, 10000);
 
-  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
-    reconnectPeriod: 1000,
-    connectTimeout: 5000
-  });
+  const client = mqtt.connect(brokerUrl, { reconnectPeriod: 1000, connectTimeout: 5000 });
 
   client.on('connect', () => {
     clearTimeout(connectTimeout);
     dot.className = 'dot ok';
-    statusText.textContent = 'Connecté';
-    noteEl.setAttribute('contenteditable', myName ? 'plaintext-only' : 'false');
+    statusText.textContent = 'Connecté — synchronisation…';
     document.getElementById('errorBanner').style.display = 'none';
-    client.subscribe(topicNote, { qos: 0 });
-    client.subscribe(topicCursor, { qos: 0 });
+    client.subscribe(topicTabs, { qos: 0 });
+    client.subscribe(topicPresence, { qos: 0 });
+    client.subscribe(topicPing, { qos: 0 });
+    setTimeout(() => { if (!tabsReceived) { publishTabs(); } }, 800);
+    subscribeToTab(activeTab);
+    sendPresence();
   });
   client.on('reconnect', () => { dot.className = 'dot pending'; statusText.textContent = 'Reconnexion…'; });
   client.on('close', () => { dot.className = 'dot'; statusText.textContent = 'Déconnecté'; });
   client.on('error', (err) => { showError('Erreur de connexion : ' + (err && err.message ? err.message : err)); });
 
+  let currentStateTopic = null, currentCursorTopic = null;
+  function topicsForTab(name){
+    const slug = slugify(name);
+    return { state: BASE + '/notes/' + slug + '/state', cursor: BASE + '/notes/' + slug + '/cursor' };
+  }
+  function subscribeToTab(name){
+    if (currentStateTopic) client.unsubscribe(currentStateTopic);
+    if (currentCursorTopic) client.unsubscribe(currentCursorTopic);
+    Object.keys(remoteCursors).forEach(removeCursor);
+    const t = topicsForTab(name);
+    currentStateTopic = t.state; currentCursorTopic = t.cursor;
+    state = { text:'', editor:'', ts:0, history:[] };
+    noteEl.textContent = '';
+    client.subscribe(currentStateTopic, { qos: 0 });
+    client.subscribe(currentCursorTopic, { qos: 0 });
+    localStorage.setItem(LS_TAB, name);
+    renderTabbar();
+  }
+
+  function publishTabs(){
+    tabs = Array.from(new Set(tabs));
+    client.publish(topicTabs, JSON.stringify(tabs), { qos: 0, retain: true });
+  }
+  function renderTabbar(){
+    tabbar.innerHTML = '';
+    tabs.forEach(name => {
+      const b = document.createElement('button');
+      b.className = 'tabBtn' + (name === activeTab ? ' active' : '');
+      b.textContent = name;
+      b.addEventListener('click', () => { if (name !== activeTab){ activeTab = name; subscribeToTab(activeTab); } });
+      tabbar.appendChild(b);
+    });
+    if (!isReadonly){
+      const add = document.createElement('button');
+      add.id = 'addTabBtn'; add.textContent = '+ Note';
+      add.addEventListener('click', () => {
+        const name = prompt('Nom de la nouvelle note :');
+        if (!name) return;
+        if (!tabs.includes(name)) { tabs.push(name); publishTabs(); }
+        activeTab = name; subscribeToTab(activeTab);
+      });
+      tabbar.appendChild(add);
+    }
+  }
+
   client.on('message', (topic, payload) => {
     let data;
     try { data = JSON.parse(payload.toString()); } catch(e){ return; }
 
-    if (topic === topicNote){
-      if (data.editor === myName) { state = data; renderMeta(); return; }
-      if (isTyping){
-        pendingRemote = data;
-        banner.style.display = 'block';
-      } else {
-        applyRemote(data);
-      }
+    if (topic === topicTabs){
+      tabsReceived = true;
+      if (Array.isArray(data) && data.length){ tabs = data; if (!tabs.includes(activeTab)) activeTab = tabs[0]; }
+      renderTabbar();
+      return;
     }
 
-    if (topic === topicCursor && data.name && data.name !== myName){
-      if (data.left){
-        removeCursor(data.name);
-      } else {
-        remoteCursors[data.name] = { offset: data.offset, ts: Date.now() };
-        renderCursors();
-      }
+    if (topic === topicPresence){
+      if (data.name === myName) return;
+      if (data.left) { delete presenceUsers[data.name]; }
+      else presenceUsers[data.name] = { color: data.color || colorForName(data.name), ts: Date.now() };
+      renderPresence();
+      return;
+    }
+
+    if (topic === topicPing){
+      if (data.ts) pingText.textContent = '📶 ' + (Date.now() - data.ts) + ' ms';
+      return;
+    }
+
+    if (topic === currentStateTopic){
+      if (data.editor === myName) { state = data; renderMeta(); return; }
+      if (isTyping) { pendingRemote = data; }
+      else applyRemote(data);
+      return;
+    }
+
+    if (topic === currentCursorTopic && data.name && data.name !== myName){
+      if (data.left) { removeCursor(data.name); return; }
+      remoteCursors[data.name] = { ...data, ts: Date.now(), el: remoteCursors[data.name] && remoteCursors[data.name].el };
+      renderCursors();
     }
   });
 
   function applyRemote(data){
-    // on garde la position du caret local si possible pendant qu'on remplace le texte
     const myOffset = document.activeElement === noteEl ? getCaretOffset(noteEl) : null;
     state = data;
     noteEl.textContent = data.text || '';
-    if (myOffset !== null){
-      setCaretOffset(noteEl, Math.min(myOffset, noteEl.textContent.length));
-    }
-    banner.style.display = 'none';
+    if (myOffset !== null) setCaretOffset(noteEl, Math.min(myOffset, noteEl.textContent.length));
     pendingRemote = null;
     renderMeta();
     renderCursors();
+    autosave();
   }
 
   function renderMeta(){
@@ -293,50 +538,100 @@ function startApp(){
       const t = new Date(state.ts).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
       statusText.textContent = `Dernière modif par ${state.editor} à ${t}`;
     }
-    undoBtn.style.display = (state.editor === myName && state.history && state.history.length) ? 'inline-block' : 'none';
+    undoBtn.style.display = (!isReadonly && state.editor === myName && state.history && state.history.length) ? 'inline-block' : 'none';
+    const t2 = getPlainText(noteEl);
+    countText.textContent = `${t2.length} caractères · ${(t2.trim() ? t2.trim().split(/\s+/).length : 0)} mots`;
   }
 
-  // ---------- Curseurs des autres personnes ----------
+  /* ---------- Présence ---------- */
+  function sendPresence(){
+    client.publish(topicPresence, JSON.stringify({ name: myName, color: myColor, ts: Date.now() }), { qos: 0 });
+  }
+  setInterval(sendPresence, PRESENCE_INTERVAL_MS);
+  function renderPresence(){
+    const now = Date.now();
+    Object.keys(presenceUsers).forEach(n => { if (now - presenceUsers[n].ts > PRESENCE_TTL_MS) delete presenceUsers[n]; });
+    const list = document.getElementById('presenceList');
+    const names = Object.keys(presenceUsers);
+    document.getElementById('presenceCount').textContent = names.length + 1;
+    list.innerHTML = '';
+    const meRow = document.createElement('div');
+    meRow.className = 'presenceRow';
+    meRow.innerHTML = `<span class="swatch" style="background:${myColor}"></span><span>${myName} (toi)</span>`;
+    list.appendChild(meRow);
+    names.forEach(n => {
+      const row = document.createElement('div');
+      row.className = 'presenceRow';
+      row.innerHTML = `<span class="swatch" style="background:${presenceUsers[n].color}"></span><span>${n}</span>`;
+      list.appendChild(row);
+    });
+  }
+  setInterval(renderPresence, 2000);
+
+  /* ---------- Ping ---------- */
+  setInterval(() => {
+    if (!client.connected) return;
+    client.publish(topicPing, JSON.stringify({ ts: Date.now() }), { qos: 0 });
+  }, PING_INTERVAL_MS);
+
+  /* ---------- Curseurs + sélection distants ---------- */
   function removeCursor(name){
     const c = remoteCursors[name];
-    if (c && c.el) c.el.remove();
+    if (c){ if (c.el) c.el.remove(); if (c.selEls) c.selEls.forEach(e=>e.remove()); }
     delete remoteCursors[name];
   }
-
   function renderCursors(){
     const now = Date.now();
+    let nearby = null;
+    const myOffset = getCaretOffset(noteEl);
     for (const name of Object.keys(remoteCursors)){
       const c = remoteCursors[name];
       if (now - c.ts > CURSOR_TTL_MS){ removeCursor(name); continue; }
 
-      let el = c.el;
-      if (!el){
-        el = document.createElement('div');
-        el.className = 'cursor';
-        const color = colorForName(name);
-        el.style.background = color;
+      if (!c.el){
+        c.el = document.createElement('div');
+        c.el.className = 'cursor';
+        c.el.style.background = c.color || colorForName(name);
         const label = document.createElement('div');
-        label.className = 'label';
-        label.style.background = color;
-        label.textContent = name;
-        el.appendChild(label);
-        noteWrap.appendChild(el);
-        c.el = el;
+        label.className = 'label'; label.style.background = c.el.style.background; label.textContent = name;
+        c.el.appendChild(label);
+        noteWrap.appendChild(c.el);
       }
-
       const offset = Math.min(c.offset, noteEl.textContent.length);
       const rect = getCoordsAtOffset(noteEl, offset);
       const wrapRect = noteWrap.getBoundingClientRect();
-      el.style.left = (rect.left - wrapRect.left + noteWrap.scrollLeft) + 'px';
-      el.style.top = (rect.top - wrapRect.top + noteWrap.scrollTop) + 'px';
-      el.style.height = (rect.height || 20) + 'px';
+      c.el.style.left = (rect.left - wrapRect.left + noteWrap.scrollLeft) + 'px';
+      c.el.style.top = (rect.top - wrapRect.top + noteWrap.scrollTop) + 'px';
+      c.el.style.height = (rect.height || 20) + 'px';
+
+      if (c.selEls) c.selEls.forEach(e=>e.remove());
+      c.selEls = [];
+      if (typeof c.selStart === 'number' && typeof c.selEnd === 'number' && c.selEnd > c.selStart){
+        const rects = getRectsForRange(noteEl, Math.min(c.selStart,noteEl.textContent.length), Math.min(c.selEnd,noteEl.textContent.length));
+        rects.forEach(r => {
+          const d = document.createElement('div');
+          d.className = 'selRect';
+          d.style.background = c.el.style.background;
+          d.style.left = (r.left - wrapRect.left + noteWrap.scrollLeft) + 'px';
+          d.style.top = (r.top - wrapRect.top + noteWrap.scrollTop) + 'px';
+          d.style.width = r.width + 'px';
+          d.style.height = r.height + 'px';
+          noteWrap.appendChild(d);
+          c.selEls.push(d);
+        });
+      }
+
+      if (myOffset !== null && Math.abs(offset - myOffset) < COLLISION_DISTANCE) nearby = name;
     }
+    if (nearby){ collisionBanner.style.display = 'block'; collisionBanner.textContent = `✍️ ${nearby} écrit tout près d'ici — vérifie avant d'enregistrer.`; }
+    else collisionBanner.style.display = 'none';
   }
-  setInterval(renderCursors, 1000); // nettoie les curseurs inactifs même sans nouvel event
+  setInterval(renderCursors, 1000);
   noteWrap.addEventListener('scroll', renderCursors);
   window.addEventListener('resize', renderCursors);
 
   function sendCursor(){
+    if (!client.connected) return;
     const offset = getCaretOffset(noteEl);
     if (offset === null) return;
     const now = Date.now();
@@ -346,91 +641,162 @@ function startApp(){
       return;
     }
     lastCursorSent = now;
-    client.publish(topicCursor, JSON.stringify({ name: myName, offset, ts: now }), { qos: 0 });
+    const sel = getSelectionRange(noteEl);
+    client.publish(currentCursorTopic, JSON.stringify({
+      name: myName, offset, color: myColor, ts: now,
+      selStart: sel ? sel.start : null, selEnd: sel ? sel.end : null
+    }), { qos: 0 });
   }
 
-  banner.addEventListener('click', () => { if (pendingRemote) applyRemote(pendingRemote); });
-
-  // Frappe au clavier : on force du texte pur (pas de <br>/<div>) pour que les offsets
-  // du curseur restent fiables, et on répercute la modif très vite pour réduire le lag.
-  noteEl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter'){
+  /* ---------- Édition ---------- */
+  if (!isReadonly){
+    noteEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter'){ e.preventDefault(); document.execCommand('insertText', false, '\n'); }
+    });
+    noteEl.addEventListener('paste', (e) => {
       e.preventDefault();
-      document.execCommand('insertText', false, '\n');
-    }
-  });
-  noteEl.addEventListener('paste', (e) => {
-    e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-    document.execCommand('insertText', false, text);
-  });
-
-  noteEl.addEventListener('input', () => {
-    isTyping = true;
-    clearTimeout(typingTimer);
-    typingTimer = setTimeout(() => { isTyping = false; if (pendingRemote) applyRemote(pendingRemote); }, MERGE_GRACE_MS);
-
-    sendCursor();
-
-    clearTimeout(publishTimer);
-    publishTimer = setTimeout(publishNote, NOTE_DEBOUNCE_MS);
-  });
-
-  ['keyup','click','focus'].forEach(evt => noteEl.addEventListener(evt, sendCursor));
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+      document.execCommand('insertText', false, text);
+    });
+    noteEl.addEventListener('input', () => {
+      isTyping = true;
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(() => { isTyping = false; if (pendingRemote) applyRemote(pendingRemote); }, MERGE_GRACE_MS);
+      sendCursor();
+      clearTimeout(publishTimer);
+      publishTimer = setTimeout(publishNote, NOTE_DEBOUNCE_MS);
+    });
+    ['keyup','click','focus'].forEach(evt => noteEl.addEventListener(evt, sendCursor));
+  } else {
+    noteEl.setAttribute('contenteditable', 'false');
+    document.getElementById('toolbar').style.display = 'none';
+    undoBtn.style.display = 'none';
+  }
 
   function publishNote(){
     const history = (state.editor ? [{text: state.text, editor: state.editor, ts: state.ts}] : [])
-      .concat(state.history || []).slice(0,5);
+      .concat(state.history || []).slice(0, HISTORY_CAP);
     const newState = { text: getPlainText(noteEl), editor: myName, ts: Date.now(), history };
     state = newState;
-    client.publish(topicNote, JSON.stringify(newState), { qos: 0, retain: true });
+    client.publish(currentStateTopic, JSON.stringify(newState), { qos: 0, retain: true });
     renderMeta();
+    autosave();
   }
 
-  undoBtn.addEventListener('click', () => {
-    if (!state.history || !state.history.length) return;
-    const prev = state.history[0];
-    const newState = { text: prev.text, editor: myName, ts: Date.now(), history: state.history.slice(1) };
+  undoBtn.addEventListener('click', () => restoreFromHistory(0));
+  function restoreFromHistory(index){
+    if (!state.history || !state.history[index]) return;
+    const entry = state.history[index];
+    const newHistory = state.history.slice(index + 1);
+    const newState = { text: entry.text, editor: myName, ts: Date.now(), history: newHistory };
     state = newState;
-    noteEl.textContent = prev.text;
-    client.publish(topicNote, JSON.stringify(newState), { qos: 0, retain: true });
+    noteEl.textContent = entry.text;
+    client.publish(currentStateTopic, JSON.stringify(newState), { qos: 0, retain: true });
     renderMeta();
-  });
-
-  shareBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(location.href).then(() => {
-      shareBtn.textContent = 'Lien copié ✓';
-      setTimeout(() => shareBtn.textContent = 'Copier le lien', 1500);
-    }).catch(() => { showError("Impossible de copier automatiquement, copie le lien manuellement dans la barre d'adresse."); });
-  });
-
-  // Signale son départ le plus tôt possible pour que le curseur disparaisse vite chez les autres
-  window.addEventListener('pagehide', () => {
-    try { client.publish(topicCursor, JSON.stringify({ name: myName, left: true }), { qos: 0 }); } catch(e){}
-  });
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden){
-      try { client.publish(topicCursor, JSON.stringify({ name: myName, left: true }), { qos: 0 }); } catch(e){}
-    }
-  });
-
-  nameOk.addEventListener('click', enterRoom);
-  nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') enterRoom(); });
-
-  function enterRoom(){
-    const val = nameInput.value.trim();
-    if (!val) return;
-    myName = val;
-    localStorage.setItem('note_name', myName);
-    nameOverlay.style.display = 'none';
-    if (client.connected){
-      noteEl.setAttribute('contenteditable', 'plaintext-only');
-    }
+    document.getElementById('historyOverlay').style.display = 'none';
   }
 
-  if (myName){ nameOverlay.style.display = 'none'; } else { nameOverlay.style.display = 'flex'; }
+  /* ---------- Sauvegarde locale / secours hors-ligne ---------- */
+  function autosaveKey(){ return AUTOSAVE_PREFIX + slugify(activeTab); }
+  function autosave(){ try { localStorage.setItem(autosaveKey(), getPlainText(noteEl)); } catch(e){} }
+  function loadAutosaveFallback(){
+    try {
+      const saved = localStorage.getItem(AUTOSAVE_PREFIX + slugify(activeTab));
+      if (saved){ noteEl.textContent = saved; statusText.textContent = 'Hors-ligne : copie locale chargée (non synchronisée)'; }
+    } catch(e){}
+  }
+
+  /* ---------- Mise en forme légère (Markdown) ---------- */
+  function wrapSelection(before, after){
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const text = sel.toString();
+    document.execCommand('insertText', false, before + text + after);
+  }
+  document.getElementById('boldBtn').addEventListener('click', () => wrapSelection('**','**'));
+  document.getElementById('italicBtn').addEventListener('click', () => wrapSelection('*','*'));
+  document.getElementById('listBtn').addEventListener('click', () => {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const text = sel.toString();
+    const listed = text.split('\n').map(l => l ? '- ' + l : l).join('\n');
+    document.execCommand('insertText', false, listed);
+  });
+
+  /* ---------- Export ---------- */
+  function downloadText(filename, content){
+    const blob = new Blob([content], {type:'text/plain;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  document.getElementById('exportTxtBtn').addEventListener('click', () => downloadText(slugify(activeTab)+'.txt', getPlainText(noteEl)));
+  document.getElementById('exportMdBtn').addEventListener('click', () => downloadText(slugify(activeTab)+'.md', getPlainText(noteEl)));
+  document.getElementById('printBtn').addEventListener('click', () => window.print());
+
+  /* ---------- Départ ---------- */
+  function announceLeave(){
+    try {
+      client.publish(topicPresence, JSON.stringify({ name: myName, left: true }), { qos: 0 });
+      if (currentCursorTopic) client.publish(currentCursorTopic, JSON.stringify({ name: myName, left: true }), { qos: 0 });
+    } catch(e){}
+  }
+  window.addEventListener('pagehide', announceLeave);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) announceLeave(); });
+
+  /* ---------- Panneaux ---------- */
+  document.getElementById('presenceBtn').addEventListener('click', () => { renderPresence(); document.getElementById('presenceOverlay').style.display = 'flex'; });
+  document.getElementById('historyBtn').addEventListener('click', () => {
+    document.getElementById('historyTabName').textContent = activeTab;
+    const list = document.getElementById('historyList');
+    list.innerHTML = '';
+    const entries = [{text: state.text, editor: state.editor, ts: state.ts}, ...(state.history||[])];
+    entries.forEach((e, i) => {
+      if (!e || !e.ts) return;
+      const row = document.createElement('div');
+      row.className = 'historyRow';
+      const t = new Date(e.ts).toLocaleString('fr-FR');
+      row.innerHTML = `<span class="txt">${t} — ${e.editor||'?'} : ${(e.text||'').slice(0,40).replace(/\n/g,' ')}</span>`;
+      if (i > 0){
+        const btn = document.createElement('button'); btn.textContent = 'Restaurer';
+        btn.addEventListener('click', () => restoreFromHistory(i - 1));
+        row.appendChild(btn);
+      }
+      list.appendChild(row);
+    });
+    document.getElementById('historyOverlay').style.display = 'flex';
+  });
+
+  const brokerInput = document.getElementById('brokerInput');
+  const colorInputSettings = document.getElementById('colorInputSettings');
+  document.getElementById('settingsBtn').addEventListener('click', () => {
+    brokerInput.value = brokerUrl;
+    colorInputSettings.value = myColor;
+    document.getElementById('settingsOverlay').style.display = 'flex';
+  });
+  document.getElementById('settingsSave').addEventListener('click', () => {
+    localStorage.setItem(LS_BROKER, brokerInput.value.trim() || DEFAULT_BROKER);
+    localStorage.setItem(LS_COLOR, colorInputSettings.value);
+    location.reload();
+  });
+
+  document.getElementById('shareBtn').addEventListener('click', () => {
+    const url = location.origin + location.pathname;
+    document.getElementById('shareLinkText').textContent = url;
+    document.getElementById('qrImg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(url);
+    document.getElementById('shareOverlay').style.display = 'flex';
+  });
+  document.getElementById('copyLinkBtn').addEventListener('click', () => {
+    navigator.clipboard.writeText(location.origin + location.pathname).then(() => {
+      const b = document.getElementById('copyLinkBtn');
+      b.textContent = 'Lien copié ✓'; setTimeout(()=> b.textContent = 'Copier le lien', 1500);
+    });
+  });
+
+  renderTabbar();
 }
 </script>
 
+<script>checkPassword();</script>
 </body>
 </html>
