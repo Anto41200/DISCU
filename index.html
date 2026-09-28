@@ -428,6 +428,11 @@ async function startApp(myName, myColor){
     dot.className = 'dot ok';
     statusText.textContent = 'Connecté — synchronisation…';
     document.getElementById('errorBanner').style.display = 'none';
+    if (!isReadonly){
+      noteEl.setAttribute('contenteditable', 'plaintext-only');
+      // Repli si le navigateur ne supporte pas plaintext-only
+      if (noteEl.contentEditable !== 'plaintext-only') noteEl.setAttribute('contenteditable', 'true');
+    }
     client.subscribe(topicTabs, { qos: 0 });
     client.subscribe(topicPresence, { qos: 0 });
     client.subscribe(topicPing, { qos: 0 });
